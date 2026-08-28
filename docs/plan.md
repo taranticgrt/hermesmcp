@@ -4,14 +4,30 @@
 
 The first milestone is to prove that the Hermes stdio MCP can be exposed correctly through an HTTP MCP bridge **on the VPS itself**. We will not attempt ChatGPT integration until this works reliably.
 
-### Step 1 — Verify Hermes MCP locally on the VPS
-- Record the installed Hermes version.
-- Run `hermes mcp serve`.
-- Confirm it uses stdio.
-- Execute MCP `initialize` and `tools/list` directly against Hermes.
-- Save the returned tool inventory as the baseline.
+### Step 1 — Verify Hermes MCP locally on the VPS — COMPLETE
+Verified on 2026-08-28 with Hermes Agent v0.20.4 (2026.8.18), Python 3.11.15.
 
-### Step 2 — Implement the stdio → Streamable HTTP bridge
+Completed checks:
+- `hermes mcp serve` exists and runs.
+- The command exposes no HTTP/SSE/port options and operates as the Hermes stdio MCP server.
+- MCP Inspector successfully initialized the server and executed `tools/list`.
+- The discovered baseline tool surface includes:
+  - `conversations_list`
+  - `conversation_get`
+  - `messages_read`
+  - `attachments_fetch`
+  - `events_poll`
+  - `events_wait`
+  - `messages_send`
+  - `channels_list`
+  - `permissions_list_open`
+  - `permissions_respond`
+- A real read-only `tools/call` of `conversations_list` with `{"limit":5}` succeeded with `isError: false` and returned five conversations.
+- Hermes may attempt OAuth initialization for configured upstream MCP clients such as Lark at startup; this can be skipped interactively for the baseline test. Non-interactive startup handling must be addressed before service deployment.
+
+**Baseline status: PASS.**
+
+### Step 2 — Implement the stdio → Streamable HTTP bridge — NEXT
 - Prefer an existing maintained MCP SDK/proxy if it correctly supports both transports.
 - Otherwise implement the smallest possible bridge.
 - The bridge must forward MCP protocol messages, not recreate individual Hermes tools.
