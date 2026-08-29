@@ -25,36 +25,43 @@ Completed checks:
 - A real read-only `tools/call` of `conversations_list` with `{"limit":5}` succeeded with `isError: false` and returned five conversations.
 - Hermes may attempt OAuth initialization for configured upstream MCP clients such as Lark at startup; this can be skipped interactively for the baseline test. Non-interactive startup handling must be addressed before service deployment.
 
-**Baseline status: PASS.**
+**Baseline status: PASS** (verified 2026-08-28).
 
-### Step 2 — Implement the stdio → Streamable HTTP bridge — NEXT
-- Prefer an existing maintained MCP SDK/proxy if it correctly supports both transports.
-- Otherwise implement the smallest possible bridge.
-- The bridge must forward MCP protocol messages, not recreate individual Hermes tools.
-- Expose a local endpoint such as `http://127.0.0.1:<port>/mcp`.
+### Step 2 — Implement the stdio → Streamable HTTP bridge — COMPLETE
+- Used the maintained `mcp-proxy` (v6.7.11) to bridge stdio → Streamable HTTP.
+- The bridge forwards MCP protocol messages; it does not recreate individual Hermes tools.
+- Local endpoint exposed at `http://127.0.0.1:8080/mcp`.
+- `mcp-proxy` v6.7.11 pinned locally under `deps/` (committed) for deterministic operation (no `npx` at boot).
+- Launcher: `bin/hermes-mcp-open-launcher.sh`.
+- Runs as user `hms` under systemd service `hermes-mcp-open.service`.
 
-### Step 3 — Test the HTTP connector on the VPS first
-Before TLS, DNS, or ChatGPT are involved, test the HTTP MCP endpoint locally on the VPS.
+**Local HTTP bridge status: PASS** (verified 2026-08-28/29).
 
-Required tests:
-1. `initialize` succeeds through HTTP.
-2. `tools/list` matches the direct Hermes stdio baseline.
-3. A harmless read-only Hermes tool can be invoked through HTTP.
-4. Hermes/MCP errors propagate correctly.
-5. Restarting the bridge or Hermes does not leave orphan processes or broken sessions.
+### Step 3 — Test the HTTP connector on the VPS first — COMPLETE
+Verified against `http://127.0.0.1:8080/mcp`:
+1. `initialize` succeeds through HTTP and returns the Hermes MCP server capabilities.
+2. `tools/list` returns the Hermes tool surface (matches the direct stdio baseline).
+3. `conversations_list` invocations succeed with `isError: false`.
+4. Protocol errors propagate correctly (e.g. missing/invalid session ID returns a structured MCP error).
+5. Service restart is clean — `hermes mcp serve` is the service's own child; `KillMode=mixed`, `TimeoutStopSec=15` prevents orphan processes.
 
-**Gate:** do not continue to public HTTPS until these local VPS HTTP tests pass.
+**Local VPS HTTP tests: PASS.**
 
-### Step 4 — Expose the tested bridge through HTTPS
-- Keep the bridge bound to localhost.
-- Use the VPS's existing reverse proxy and valid TLS certificate.
-- Expose only `https://<host>/mcp` publicly.
-- Verify TLS and MCP behavior from an external MCP client.
+### Step 4 — Expose the tested bridge through HTTPS — COMPLETE
+- Bridge stays bound to loopback only (`127.0.0.1:8080`).
+- Existing nginx reverse proxy + valid TLS certificate terminate HTTPS.
+- Public URL: **`https://christian.taranti.pserver.space/mcpgpt/mcp`**
+- `location = /mcpgpt/mcp` → `http://127.0.0.1:8080/mcp`, with `proxy_buffering off`, 3600s timeouts, HTTP/1.1, `Connection ""` (streaming-safe).
+- Note: the path is `/mcpgpt/mcp`, not `/mcp`, because `/mcp` at this host is owned by the separate Lark /mcp deployment (untouched).
+- Verified from an external MCP client over HTTPS: `initialize` succeeds and `tools/list`/`conversations_list` pass.
 
-### Step 5 — Add access control
-- Treat the endpoint as privileged because Hermes exposes write-capable tools.
+**Public HTTPS bridge status: PASS.**
+
+### Step 5 — Add access control — NEXT (open)
+- The endpoint is currently **unauthenticated** and Hermes exposes write-capable tools; treat it as privileged.
 - Confirm the authentication mechanisms supported by the target ChatGPT Enterprise workspace.
 - Add authentication before enabling production write operations.
+- This is the next open step in the plan.
 
 ### Step 6 — Connect ChatGPT
 Only after the HTTPS endpoint passes independent MCP testing:
