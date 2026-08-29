@@ -2,15 +2,15 @@
 
 ## Goal
 
-Expose the MCP server already provided by Hermes to ChatGPT through a secure, standards-compliant remote MCP endpoint.
+Expose Hermes to ChatGPT through a secure, standards-compliant remote MCP endpoint while preserving Hermes as the authority for its native MCP tools.
 
-Hermes already provides its MCP interface through:
+Hermes already provides its conversation/messaging MCP interface through:
 
 ```bash
 hermes mcp serve
 ```
 
-The project therefore should **not reimplement Hermes tools or business logic**. Its purpose is to bridge the existing Hermes MCP stdio transport to the remote transport required by ChatGPT.
+This project bridges that stdio MCP transport to remote Streamable HTTP and adds one explicit delegation capability that the native Hermes MCP does not provide: `agent_run`.
 
 ## Target architecture
 
@@ -23,44 +23,62 @@ ChatGPT Enterprise
 https://<host>/mcp
         |
         v
-Hermes MCP Bridge
+mcp-proxy
         |
         | MCP over stdio
         v
-hermes mcp serve
+hermes_mcp_extended.py
         |
-        v
-      Hermes
+        +-- native Hermes MCP tools from mcp_serve
+        |
+        +-- agent_run(prompt)
+                |
+                v
+        hermes chat -q <prompt>
+                |
+                v
+             Hermes agent
 ```
+
+## Why `agent_run` exists
+
+The native `messages_send` tool sends a message **outward as Hermes** to Telegram, WhatsApp, Feishu, Slack, or another configured platform. It does not submit a user instruction to the Hermes agent.
+
+`agent_run` is intentionally separate. It starts a real non-interactive Hermes agent task and returns the final response to the MCP caller.
+
+This prevents a request such as "ask Hermes to do X" from accidentally becoming a bot-authored platform message containing the text "do X".
 
 ## Primary objectives
 
-- Preserve Hermes as the authoritative MCP server and tool provider.
-- Bridge MCP stdio to MCP Streamable HTTP without translating individual Hermes tools.
-- Expose a stable `/mcp` endpoint over HTTPS from the VPS where Hermes is running.
-- Preserve MCP protocol semantics, schemas, errors, discovery, and future Hermes tools.
-- Allow ChatGPT to discover Hermes tools through normal MCP `initialize` and `tools/list` operations.
-- Add authentication and access control suitable for exposing Hermes remotely.
-- Keep the bridge small, auditable, and independent from Hermes internals.
-- Support reliable operation as a VPS service, including lifecycle management, logging, and health checks.
+- Preserve Hermes as the authoritative provider for its native MCP tools.
+- Bridge MCP stdio to MCP Streamable HTTP.
+- Preserve native tool discovery, schemas, and errors.
+- Add `agent_run` without changing or overloading `messages_send`.
+- Keep the bridge small, auditable, and independent from Hermes source modifications.
+- Run Hermes agent delegation using the installed Hermes profile, tools, skills, MCP servers, and model configuration.
 
-## Non-goals
+## Native Hermes tools preserved
 
-- Reimplementing Hermes conversation or messaging APIs.
-- Creating HTTP REST endpoints for each Hermes MCP tool.
-- Forking Hermes unless a confirmed Hermes defect makes that necessary.
-- Exposing the Hermes stdio process directly to the network.
+The extended server imports Hermes's own `mcp_serve.create_mcp_server`, so the existing tools remain native to Hermes, including:
 
-## Initial success criteria
+- `conversations_list`
+- `conversation_get`
+- `messages_read`
+- `attachments_fetch`
+- `events_poll`
+- `events_wait`
+- `messages_send`
+- `channels_list`
+- `permissions_list_open`
+- `permissions_respond`
 
-1. `hermes mcp serve` runs successfully on the VPS.
-2. A local bridge can initialize an MCP session against the Hermes stdio server.
-3. `tools/list` through the bridge returns the tools exposed by Hermes.
-4. The bridge exposes a standards-compliant Streamable HTTP MCP endpoint.
-5. The endpoint is reachable through valid HTTPS.
-6. An external MCP client can initialize, discover tools, and execute a read-only Hermes tool.
-7. ChatGPT can connect to the endpoint and discover the Hermes tool set.
-8. Authentication is added before production exposure of write-capable Hermes tools.
+The project adds:
+
+- `agent_run` — execute a real Hermes agent task and return its response directly.
+
+## Safety note
+
+`agent_run` may cause Hermes to invoke tools with side effects depending on the prompt and Hermes configuration. It must be treated as a write-capable action even though its return path is synchronous and does not itself send a platform message.
 
 ## Documentation
 
